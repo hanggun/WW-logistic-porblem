@@ -1,0 +1,145 @@
+model "WW"
+uses "mmxprs", "mmquad"
+
+declarations
+    num_of_slocs = 6 !number of seed locations
+    num_of_olocs = 100 !number of order locations
+    num_of_prod = 15 !number of product
+    seed_locations = 1..num_of_slocs
+    container_locations = {5,6}!based on distance from seed location to plant (python)
+    order_locations = 1..num_of_olocs
+    products = 1..num_of_prod
+    sr = 3 !surcharge rate
+    mc = 1500 !minimum charge by company
+    dct = 10 !drop charge
+    DT = 10 ! drop time 10 mins
+    v = 1.5 ! average speed 1.5km/min
+    HL = 440 ! total 440min for container driving
+    d_0i: array(seed_locations) of real
+    d_0j: array(order_locations) of real
+    r_i: array(seed_locations) of real
+    d_ji: array(order_locations, seed_locations) of real
+    d_ij: array(seed_locations, order_locations) of real
+    w_p: array(products) of real!weight of product p
+    Q_i: array(seed_locations) of real !capacity of seed location i
+    D_jp: array(order_locations, products) of real
+    I_p: array(products) of real!available inventory of product p
+    b_ij: array(seed_locations, order_locations) of real
+    k_j: array(order_locations) of real
+    Y_i: array(seed_locations) of mpvar
+    TU: array(seed_locations) of mpvar
+    Z_ij: array(seed_locations, order_locations) of mpvar
+    c_i: array(seed_locations) of mpvar !Truck-Seed Location Cost
+    a_ij: array(seed_locations, order_locations) of mpvar!assignment Cost to a Truck Seed
+    X_ijp: array(seed_locations, order_locations, products) of mpvar
+end-declarations
+
+initialisations from "WW.dat"
+  d_0i r_i d_ji d_0j w_p Q_i D_jp I_p b_ij k_j d_ij
+end-initialisations
+
+!--------------------------binary variable--------------------------------------------------
+!Whether choose the seed location
+forall (s in seed_locations) do
+    Y_i(s) is_binary
+end-do
+!Whether choose the route from seed_locations to order_locations
+forall (s in seed_locations, o in order_locations) do
+    Z_ij(s,o) is_binary
+end-do
+
+!---------------------calculation of Truck Seed Location Cost--------------------------------------
+forall (i in seed_locations) do
+    if (d_0i(i) * r_i(i) <= mc) then
+        c_i(i) = d_0i(i)*sr + mc
+    else
+        c_i(i) = (sr + r_i(i)) * d_0i(i)
+    end-if
+end-do
+
+!---------------------calculation of Assignment Cost to a Truck Seed--------------------------------
+forall (i in seed_locations, j in order_locations) do
+    if (d_0i(i) + d_ji(j,i) * r_i(i) <= mc) then
+        a_ij(i,j) = dct + (d_0j(j) + d_ji(j,i)) * sr + mc - c_i(i)
+    else
+        a_ij(i,j) = dct + (d_0j(j) + d_ji(j,i)) * (sr + r_i(i)) - c_i(i)
+    end-if
+end-do
+
+!---------------------objective function----------------------------------------------------------
+assign_cost:= sum(i in seed_locations) c_i(i) * Y_i(i) +
+              sum(i in seed_locations, j in order_locations) a_ij(i,j) * Z_ij(i,j)
+
+!---------------------constraint 1--------------------------------------------------------------
+forall (i in seed_locations) do
+    sum(j in order_locations, p in products) w_p(p) * X_ijp(i,j,p) <= Q_i(i)
+end-do
+
+!---------------------constraint 2--------------------------------------------------------------
+forall (j in order_locations, p in products) do
+    sum(i in seed_locations) X_ijp(i,j,p) <= D_jp(j,p)
+end-do
+
+!--------------------constraint 3---------------------------------------------------------------
+forall(p in products) do
+    sum(i in seed_locations, j in order_locations) X_ijp(i,j,p) <= I_p(p)
+end-do
+
+!-------------------contraint 4----------------------------------------------------------------
+forall (p in products) do
+    critical_p(p) := sum(j in order_locations) D_jp(j,p) * k_j(j)
+    sum(i in seed_locations, j in order_locations) X_ijp(i,j,p) * k_j(j) >= minlist(
+      critical_p(p), I_p(p))
+end-do
+
+!------------------constraint 5----------------------------------------------------------------
+forall (p in products) do
+    non_critical_p(p) := sum(j in order_locations) D_jp(j,p)
+    sum(i in seed_locations, j in order_locations) X_ijp(i,j,p) >= minlist(
+      non_critical_p(p), I_p(p))
+end-do
+
+!------------------constraint 6----------------------------------------------------------------
+forall (i in container_locations) do 
+    (sum(j in order_locations) (DT + 2 * d_ij(i, j) / v) * Z_ij(i,j)) <= HL
+end-do
+!--------------------constraint 7---------------------------------------------------------------
+forall(i in seed_locations, j in order_locations) do
+ Z_ij(i,j) <= b_ij(i,j)
+end-do
+
+!--------------------constraint 8--------------------------------------------------------------
+forall (i in seed_locations, j in order_locations) do
+    sum(p in products) X_ijp(i,j,p) <= sum(p in products) D_jp(j,p) * Z_ij(i,j)
+end-do
+
+!--------------------constraint 9----------------------------------------------------------------
+forall (i in seed_locations, j in order_locations) do
+    Z_ij(i,j) <= Y_i(i)
+end-do
+
+!--------------------Truck Utilization--------------------------------------------------------
+forall (i in seed_locations) do
+    TU(i) = (sum(j in order_locations, p in products) w_p(p) * X_ijp(i,j,p)) / Q_i(i) * 100
+    !TU(i) <= 85 * Y_i(i)
+end-do
+
+!------------------Total Shipment-------------------------------------------------------------
+Total_TL := sum(i in {1,2,3,4}, j in order_locations, p in products) X_ijp(i,j,p) * w_p(p)
+Total_IM := sum(i in container_locations, j in order_locations, p in products) X_ijp(i,j,p) * w_p(p)
+cost_TL := sum(i in {1,2,3,4}) c_i(i) * Y_i(i) + sum(i in {1,2,3,4}, j in order_locations) a_ij(i,j) * Z_ij(i,j)
+cost_IM := sum(i in container_locations) c_i(i) * Y_i(i) + sum(i in container_locations, j in order_locations) a_ij(i,j) * Z_ij(i,j)
+setparam("XPRS_VERBOSE",true)
+minimise(assign_cost)
+!write the problem report
+writeprob("myproblem.lp","lp")
+writeln("The minimum cost is: ", getsol(assign_cost))
+
+forall(i in seed_locations) do
+    writeln("The Truck utilization for seed location ", i,  " is: ", getsol(TU(i)))
+    writeln('Total shipment of TL is: ', getsol(Total_TL))
+    writeln('Total shipment of IM is: ', getsol(Total_IM))
+    writeln('Total cost of TL is: ', getsol(cost_TL))
+    writeln('Total cost of IM is: ', getsol(cost_IM))
+end-do
+end-model

@@ -15,6 +15,7 @@ declarations
     DT = 10 ! drop time 10 mins
     v = 1.5 ! average speed 1.5km/min
     HL = 440 ! total 440min for container driving
+    TU1 = 1
     d_0i: array(seed_locations) of real
     d_0j: array(order_locations) of real
     r_i: array(seed_locations) of real
@@ -72,7 +73,7 @@ assign_cost:= sum(i in seed_locations) c_i(i) * Y_i(i) +
 
 !---------------------constraint 1--------------------------------------------------------------
 forall (i in seed_locations) do
-    sum(j in order_locations, p in products) w_p(p) * X_ijp(i,j,p) <= Q_i(i)
+    sum(j in order_locations, p in products) w_p(p) * X_ijp(i,j,p) <=  TU1 * Q_i(i)
 end-do
 
 !---------------------constraint 2--------------------------------------------------------------
@@ -121,7 +122,6 @@ end-do
 !--------------------Truck Utilization--------------------------------------------------------
 forall (i in seed_locations) do
     TU(i) = (sum(j in order_locations, p in products) w_p(p) * X_ijp(i,j,p)) / Q_i(i) * 100
-    !TU(i) <= 85 * Y_i(i)
 end-do
 
 !------------------Total Shipment-------------------------------------------------------------

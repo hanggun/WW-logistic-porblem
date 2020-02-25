@@ -16,6 +16,7 @@ declarations
     v = 1.5 ! average speed 1.5km/min
     HL = 440 ! total 440min for container driving
     TU1 = 1
+    RU1 = 0.90
     d_0i: array(seed_locations) of real
     d_0j: array(order_locations) of real
     r_i: array(seed_locations) of real
@@ -71,10 +72,15 @@ end-do
 assign_cost:= sum(i in seed_locations) c_i(i) * Y_i(i) +
               sum(i in seed_locations, j in order_locations) a_ij(i,j) * Z_ij(i,j)
 
-!---------------------constraint 1--------------------------------------------------------------
+!---------------------extra constraint-------------------------------------------------------------
 forall (i in seed_locations) do
-    sum(j in order_locations, p in products) w_p(p) * X_ijp(i,j,p) <=  TU1 * Q_i(i)
+    L(i) := sum(j in order_locations) d_ij(i,j) / 30
+    (sum(j in order_locations, p in products) d_0j(j) * w_p(p) * X_ijp(i,j,p)) * 1/L(i) <= RU1 * Q_i(i)
 end-do
+!---------------------constraint 1--------------------------------------------------------------
+! forall (i in seed_locations) do
+!     sum(j in order_locations, p in products) w_p(p) * X_ijp(i,j,p) <=  TU1 * Q_i(i)
+! end-do
 
 !---------------------constraint 2--------------------------------------------------------------
 forall (j in order_locations, p in products) do
@@ -124,6 +130,11 @@ forall (i in seed_locations) do
     TU(i) = (sum(j in order_locations, p in products) w_p(p) * X_ijp(i,j,p)) / Q_i(i) * 100
 end-do
 
+!-------------------Route Based Utilization---------------------------------------------------
+forall (i in seed_locations) do
+    RU(i) := (sum(j in order_locations, p in products) d_0j(j) * w_p(p) * X_ijp(i,j,p)) * 1/((Q_i(i) * L(i))) * 100 
+end-do
+
 !------------------Total Shipment-------------------------------------------------------------
 Total_TL := sum(i in {1,2,3,4}, j in order_locations, p in products) X_ijp(i,j,p) * w_p(p)
 Total_IM := sum(i in container_locations, j in order_locations, p in products) X_ijp(i,j,p) * w_p(p)
@@ -137,6 +148,7 @@ writeln("The minimum cost is: ", getsol(assign_cost))
 
 forall(i in seed_locations) do
     writeln("The Truck utilization for seed location ", i,  " is: ", getsol(TU(i)))
+    writeln("The Route based utilization for seed location ", i, ' is: ', getsol(RU(i)))
     writeln('Total shipment of TL is: ', getsol(Total_TL))
     writeln('Total shipment of IM is: ', getsol(Total_IM))
     writeln('Total cost of TL is: ', getsol(cost_TL))
